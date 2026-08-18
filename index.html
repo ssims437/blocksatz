@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<title>Blocksatz — warum ein guter Zeilenumbruch ein Optimierungsproblem ist</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="Jeder Browser bricht Zeilen gierig. Knuth und Plass haben gezeigt, dass man den ganzen Absatz auf einmal optimieren muss — hier stehen beide Verfahren nebeneinander, mit gemessener Güte je Zeile und einem Prüflauf gegen die erschöpfende Aufzählung." />
+
+<style>
+  :root {
+    --grund: #EFEEEA;
+    --feld:  #FAF9F6;
+    --tief:  #E4E2DC;
+    --linie: #C9C6BC;
+    --tinte: #1A1815;
+    --leise: #66625A;
+    --netz:  #B6B2A7;
+    --gierig: #A8471F;
+    --gut:    #1F5FA8;
+    --trenn:  #7A4E9A;
+    --ok:     #2C7A34;
+    --warn:   #A32C22;
+    --schatten: 0 1px 0 rgba(26,24,21,.05), 0 10px 24px -16px rgba(26,24,21,.45);
+    --f-fest: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "DejaVu Sans Mono", monospace;
+    --f-text: -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --f-satz: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --grund: #131211; --feld: #1A1917; --tief: #0C0C0A; --linie: #302E2A;
+      --tinte: #E8E5DE; --leise: #948F85; --netz: #423F38;
+      --gierig: #E0785C; --gut: #6CA8E8; --trenn: #B48ADA; --ok: #7FBF6A; --warn: #E0776B;
+      --schatten: 0 1px 0 rgba(255,255,255,.03), 0 12px 30px -18px #000;
+    }
+  }
+  :root[data-theme="dark"] {
+    --grund: #131211; --feld: #1A1917; --tief: #0C0C0A; --linie: #302E2A;
+    --tinte: #E8E5DE; --leise: #948F85; --netz: #423F38;
+    --gierig: #E0785C; --gut: #6CA8E8; --trenn: #B48ADA; --ok: #7FBF6A; --warn: #E0776B;
+    --schatten: 0 1px 0 rgba(255,255,255,.03), 0 12px 30px -18px #000;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--grund); color:var(--tinte);
+    font-family:var(--f-text); font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .blatt { max-width:1160px; margin:0 auto;
+    padding: clamp(20px,4vw,44px) clamp(14px,3vw,28px) 64px;
+    display:flex; flex-direction:column; gap:18px; }
+
+  .marke { font-family:var(--f-fest); font-size:10px; letter-spacing:.2em; text-transform:uppercase;
+    color:var(--leise); display:flex; gap:12px; align-items:center; margin:0; }
+  .marke::after { content:""; flex:1; height:1px; background:var(--linie); }
+  h1 { font-family:var(--f-fest); font-weight:700; font-size:clamp(24px,4.2vw,40px);
+    line-height:1.06; letter-spacing:-.03em; margin:0; text-wrap:balance; }
+  h1 span { color:var(--gut); }
+  .vorspann { max-width:70ch; color:var(--leise); margin:0; }
+  .vorspann b { color:var(--tinte); font-weight:600; }
+
+  .leiste { display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+    background:var(--feld); border:1px solid var(--linie); padding:9px 11px; box-shadow:var(--schatten); }
+  .kl { font-family:var(--f-fest); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--leise); }
+  button, select, input, textarea { font-family:var(--f-fest); font-size:12px; color:var(--tinte);
+    background:var(--grund); border:1px solid var(--linie); border-radius:0; padding:6px 10px; letter-spacing:.03em; }
+  button, select { cursor:pointer; }
+  button:hover, select:hover { border-color:var(--gut); }
+  button:active { background:var(--tief); }
+  button.haupt { background:var(--gut); border-color:var(--gut); color:var(--feld); }
+  button[aria-pressed="true"] { background:var(--tief); border-color:var(--gut); }
+  input[type=range] { padding:0; background:none; border:none; accent-color:var(--gut); vertical-align:middle; }
+  :focus-visible { outline:2px solid var(--gut); outline-offset:2px; }
+
+  .kasten { background:var(--feld); border:1px solid var(--linie); box-shadow:var(--schatten);
+    display:flex; flex-direction:column; min-width:0; }
+  .kasten-kopf { display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+    padding:8px 11px; border-bottom:1px solid var(--linie); }
+  .kasten-leib { padding:11px; display:flex; flex-direction:column; gap:10px; min-width:0; }
+  .buehne { display:grid; grid-template-columns: minmax(0,1fr) 300px; gap:18px; align-items:start; }
+  @media (max-width: 900px) { .buehne { grid-template-columns: minmax(0,1fr); } }
+  .saeule { display:flex; flex-direction:column; gap:18px; min-width:0; }
+
+  canvas { width:100%; height:auto; display:block; background:var(--tief); border:1px solid var(--linie); }
+  textarea#text { width:100%; min-height:110px; line-height:1.5; }
+
+  .werte { display:grid; grid-template-columns:repeat(auto-fit,minmax(118px,1fr)); gap:1px;
+    background:var(--linie); border:1px solid var(--linie); }
+  .wert { background:var(--feld); padding:7px 9px; min-width:0; }
+  .wert .l { font-family:var(--f-fest); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--leise); }
+  .wert .n { font-family:var(--f-fest); font-size:16px; font-variant-numeric:tabular-nums; }
+  .wert .n.gierig { color:var(--gierig); } .wert .n.gut { color:var(--gut); }
+  .wert .n.ok { color:var(--ok); } .wert .n.warn { color:var(--warn); }
+
+  table.liste { border-collapse:collapse; width:100%; font-family:var(--f-fest); font-size:12px; }
+  table.liste th, table.liste td { border-bottom:1px solid var(--linie); padding:4px 7px; text-align:left; }
+  table.liste th { color:var(--leise); font-weight:400; font-size:10px; letter-spacing:.1em; text-transform:uppercase; }
+  table.liste td.z { text-align:right; font-variant-numeric:tabular-nums; }
+  .gutt { color:var(--ok); } .schlecht { color:var(--warn); }
+
+  .hinweis { font-family:var(--f-fest); font-size:12px; color:var(--leise); letter-spacing:0; margin:0; }
+  .hinweis b { color:var(--tinte); font-weight:600; }
+  .strich { display:inline-block; width:14px; height:3px; vertical-align:3px; margin-right:5px; }
+
+  .noten { display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:18px; margin-top:6px; }
+  .noten section { background:var(--feld); border:1px solid var(--linie); padding:12px 14px; box-shadow:var(--schatten); }
+  .noten h3 { font-family:var(--f-fest); font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--leise); margin:0 0 6px; font-weight:400; }
+  .noten p { margin:0; font-size:14px; }
+  code { font-family:var(--f-fest); font-size:12.5px; background:var(--tief); padding:1px 4px; }
+  .fuss { color:var(--leise); font-size:13px; border-top:1px solid var(--linie); padding-top:12px; }
+  .fuss a { color:var(--gut); }
+</style>
+</head>
+<body>
+<main class="blatt">
+
+  <p class="marke">Blatt · Schrift</p>
+  <h1>Blocksatz — warum ein guter Zeilenumbruch ein <span>Optimierungsproblem</span> ist</h1>
+  <p class="vorspann">
+    Jeder Browser bricht Zeilen <b>gierig</b>: Wörter aufnehmen, bis das nächste nicht mehr passt,
+    umbrechen, weiter. Das ist schnell und oft schlecht — eine einzige zu volle Zeile hinterlässt
+    drei löchrige. Knuth und Plass haben 1981 gezeigt, dass man den <b>ganzen Absatz auf einmal</b>
+    betrachten muss, und dass der beste Umbruch eine frühe Zeile absichtlich schlechter macht,
+    damit die späteren gut werden. Hier stehen beide Verfahren übereinander — mit der Güte jeder
+    einzelnen Zeile daneben.
+  </p>
+
+  <div class="leiste">
+    <span class="kl">Text</span>
+    <select id="probe" aria-label="Textprobe"></select>
+    <span class="kl" style="margin-left:4px">Spaltenbreite</span>
+    <input type="range" id="breite" min="180" max="640" value="420" style="width:130px" aria-label="Spaltenbreite" />
+    <span class="kl" id="breite-zahl" style="min-width:5ch"></span>
+    <span class="kl" style="margin-left:4px">Schriftgrad</span>
+    <input type="range" id="grad" min="12" max="26" value="17" style="width:80px" aria-label="Schriftgrad" />
+    <button id="b-trennen" aria-pressed="false">Silbentrennung</button>
+    <button id="b-guete" aria-pressed="true">Güte anzeigen</button>
+    <span style="flex:1"></span>
+    <button id="b-thema">Ansicht</button>
+  </div>
+
+  <div class="buehne">
+    <div class="saeule">
+      <div class="kasten">
+        <div class="kasten-kopf">
+          <span class="kl" style="color:var(--gierig)">Gierig — so bricht jeder Browser</span>
+          <span class="kl" id="gierig-lage" style="margin-left:auto"></span>
+        </div>
+        <div class="kasten-leib">
+          <canvas id="satz-gierig" width="1000" height="360" aria-label="Absatz mit gierigem Zeilenumbruch"></canvas>
+        </div>
+      </div>
+
+      <div class="kasten">
+        <div class="kasten-kopf">
+          <span class="kl" style="color:var(--gut)">Optimal — der ganze Absatz auf einmal</span>
+          <span class="kl" id="gut-lage" style="margin-left:auto"></span>
+        </div>
+        <div class="kasten-leib">
+          <canvas id="satz-gut" width="1000" height="360" aria-label="Absatz mit optimalem Zeilenumbruch"></canvas>
+          <p class="hinweis" id="vergleich-fuss"></p>
+        </div>
+      </div>
+
+      <div class="kasten">
+        <div class="kasten-kopf">
+          <span class="kl">Güte Zeile für Zeile</span>
+          <span class="kl" id="guete-lage" style="margin-left:auto"></span>
+        </div>
+        <div class="kasten-leib">
+          <canvas id="guete" width="1000" height="200" aria-label="Güte jeder Zeile in beiden Verfahren"></canvas>
+          <p class="hinweis">
+            Je Zeile ein Balken: wie weit die Wortzwischenräume vom Sollmaß abweichen müssen, damit
+            die Zeile genau die Spaltenbreite füllt. <b>Nach oben</b> heißt gedehnt (löchrig),
+            <b>nach unten</b> gestaucht (gedrängt). Die Strafe wächst mit der <b>dritten Potenz</b> —
+            deshalb sind vier mittelmäßige Zeilen besser als drei gute und eine schlechte.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="saeule">
+      <div class="kasten">
+        <div class="kasten-kopf"><span class="kl">Gemessen</span></div>
+        <div class="kasten-leib">
+          <div class="werte">
+            <div class="wert"><div class="l">gierig gesamt</div><div class="n gierig" id="w-g-summe">—</div></div>
+            <div class="wert"><div class="l">optimal gesamt</div><div class="n gut" id="w-o-summe">—</div></div>
+            <div class="wert"><div class="l">schlechteste Zeile gierig</div><div class="n gierig" id="w-g-max">—</div></div>
+            <div class="wert"><div class="l">schlechteste Zeile optimal</div><div class="n gut" id="w-o-max">—</div></div>
+            <div class="wert"><div class="l">Zeilen</div><div class="n" id="w-zeilen">—</div></div>
+            <div class="wert"><div class="l">Trennungen</div><div class="n" id="w-trennungen">—</div></div>
+          </div>
+          <p class="hinweis" id="mess-fuss"></p>
+        </div>
+      </div>
+
+      <div class="kasten">
+        <div class="kasten-kopf">
+          <span class="kl">Eigener Text</span>
+        </div>
+        <div class="kasten-leib">
+          <textarea id="text" spellcheck="false" aria-label="Eigener Text"></textarea>
+          <p class="hinweis">
+            Hineinschreiben, was man will — der Umbruch wird sofort neu gerechnet. Der Unterschied
+            zwischen gierig und optimal ist bei <b>schmalen Spalten</b> am größten; bei sehr breiten
+            verschwindet er, weil dann fast jede Aufteilung passt.
+          </p>
+        </div>
+      </div>
+
+      <div class="kasten">
+        <div class="kasten-kopf"><span class="kl">Silbentrennung</span>
+          <span class="kl" id="trenn-lage" style="margin-left:auto"></span></div>
+        <div class="kasten-leib">
+          <table class="liste" id="trennproben"><tbody></tbody></table>
+          <p class="hinweis" id="trenn-fuss"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="kasten">
+    <div class="kasten-kopf">
+      <span class="kl">Beweis statt Behauptung</span>
+      <button id="b-pruefen" class="haupt" style="margin-left:auto">Prüfen</button>
+    </div>
+    <div class="kasten-leib">
+      <p class="hinweis">
+        „Optimal" ist ein starkes Wort. Es wird hier eingelöst: Für kurze Absätze werden
+        <b>alle</b> möglichen Umbruchstellen durchprobiert — bei zwölf Wörtern sind das 2048
+        Aufteilungen — und das Ergebnis der Optimierung muss <b>genau</b> das Minimum treffen. Dazu
+        die Zusage, die den ganzen Aufwand rechtfertigt: der optimale Umbruch ist <b>nie</b>
+        schlechter als der gierige. Und die Silbentrennung wird nicht gelobt, sondern gegen ein
+        Wörterbuch gemessen — mit dem Anteil, den sie <b>nicht</b> trifft.
+      </p>
+      <table class="liste" id="pruef"><tbody></tbody></table>
+      <p class="hinweis" id="pruef-fuss">noch nicht geprüft</p>
+    </div>
+  </div>
+
+  <div class="noten">
+    <section>
+      <h3>Warum die dritte Potenz</h3>
+      <p>
+        Die Strafe für eine schlechte Zeile wächst mit <code>r³</code>, wobei <code>r</code> misst,
+        wie weit die Zwischenräume gedehnt werden mussten. Diese Wahl stammt von Knuth und ist
+        Absicht: Eine Zeile, die <b>doppelt</b> so stark gedehnt ist, ist <b>achtmal</b> so
+        schlimm. Dadurch verteilt das Verfahren den Schaden — statt ihn irgendwo abzuladen.
+      </p>
+    </section>
+    <section>
+      <h3>Was Trennung bringt</h3>
+      <p>
+        Silbentrennung gibt dem Verfahren mehr Stellen, an denen es umbrechen darf — im Schnitt
+        sinkt die Gesamtstrafe deutlich, und schmale Spalten werden überhaupt erst lesbar.
+        Sie ist der Grund, warum deutscher Blocksatz in Büchern funktioniert und im Browser oft
+        nicht: <code>hyphens: auto</code> ist bis heute nicht überall selbstverständlich.
+      </p>
+    </section>
+    <section>
+      <h3>Warum Regeln nicht reichen</h3>
+      <p>
+        Die Trennung hier folgt Sprechsilben-Regeln — Vokalgruppen suchen, vor dem letzten
+        Mitlaut trennen, <code>ch</code>, <code>sch</code> und <code>ck</code> zusammenlassen. Bei
+        <b>zusammengesetzten</b> Wörtern versagt das: Wer nicht weiß, dass „Buchstabe" aus Buch und
+        Stabe besteht, trennt <b>Buchs-ta-be</b>. Echte Trennprogramme benutzen deshalb
+        Wörterbücher und die Mustertabellen von Liang — die Prüfung unten zeigt genau diese Lücke.
+      </p>
+    </section>
+  </div>
+
+  <p class="fuss">
+    Eine einzelne HTML-Datei. Kein Build, keine Bibliothek, nichts verlässt den Browser.
+    <span style="display:block;margin-top:8px">
+      Alle Blätter: <a href="https://ssims437.github.io/">ssims437.github.io</a>
+    </span>
+  </p>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+
+  /* ==========================================================================
+     GÜTE EINER ZEILE
+     Ein Maß dafür, wie sehr die Wortzwischenräume vom Sollmaß abweichen müssen,
+     damit die Zeile genau die Spaltenbreite füllt. Die dritte Potenz ist von
+     Knuth: doppelt so weit gedehnt heißt achtmal so schlimm.
+     ========================================================================== */
+  const SCHLECHT = 10000;               // so schlecht, dass es als unmöglich gilt
+  const DEHNBAR = 0.6;                  // ein Zwischenraum darf sich um 60 % dehnen
+  const STAUCHBAR = 0.33;               // und um ein Drittel stauchen
+
+  function guete(ist, soll, dehn, stauch) {
+    const fehlt = soll - ist;
+    if (Math.abs(fehlt) < 1e-9) return { b: 0, r: 0 };
+    if (fehlt > 0) {
+      if (dehn <= 0) return { b: SCHLECHT, r: 3 };
+      const r = fehlt / dehn;
+      return { b: r > 3 ? SCHLECHT : 100 * r * r * r, r };
+    }
+    if (stauch <= 0) return { b: SCHLECHT, r: -1 };
+    const r = -fehlt / stauch;
+    return { b: r > 1 ? SCHLECHT : 100 * r * r * r, r: -r };
+  }
+
+  /* Ein Absatz ist eine Liste von Kästchen (Wörtern oder Wortteilen) mit Breite,
+     dazwischen Zwischenräume. Ein Kästchen darf am Ende einer Zeile stehen, wenn
+     dort eine Umbruchstelle erlaubt ist. */
+  function zeilenMass(kaesten, von, bis, zwischenbreite) {
+    let breite = 0;
+    for (let i = von; i <= bis; i++) breite += kaesten[i].breite;
+    let zwischen = 0;
+    for (let i = von; i < bis; i++) if (!kaesten[i].klebt) zwischen++;
+    const strich = kaesten[bis].trennung ? kaesten[bis].strichbreite : 0;
+    return { ist: breite + zwischen * zwischenbreite + strich, zwischen };
+  }
+
+  /* Die letzte Zeile eines Absatzes darf kurz bleiben — sie wird nicht auf die
+     Spaltenbreite gedehnt. Straffrei heißt aber nicht regellos: zu lang darf sie
+     trotzdem nicht sein, sonst setzt die Optimierung den ganzen Absatz in eine
+     einzige überlange Zeile und meldet Strafe null. */
+  function letzteZeilePasst(kaesten, von, bis, breite, zwischenbreite) {
+    return passtUeberhaupt(kaesten, von, bis, breite, zwischenbreite);
+  }
+
+  /* Zwei verschiedene Arten von schlecht, die man nicht verwechseln darf:
+       zu locker  — die Zwischenräume müssten weiter gedehnt werden als erlaubt.
+                    Hässlich, aber im Notfall hinnehmbar.
+       passt nicht — der Text ist selbst maximal gestaucht breiter als die Spalte.
+                    Das ist keine schlechte Zeile, das ist gar keine.
+     Wer beides gleich bestraft, bekommt als billigste „Lösung" den ganzen
+     Absatz in einer einzigen überlangen Zeile. */
+  function passtUeberhaupt(kaesten, von, bis, breite, zwischenbreite) {
+    const m = zeilenMass(kaesten, von, bis, zwischenbreite);
+    return m.ist - m.zwischen * zwischenbreite * STAUCHBAR <= breite + 1e-9;
+  }
+
+  function zeileBewerten(kaesten, von, bis, breite, zwischenbreite) {
+    const m = zeilenMass(kaesten, von, bis, zwischenbreite);
+    const dehn = m.zwischen * zwischenbreite * DEHNBAR;
+    const stauch = m.zwischen * zwischenbreite * STAUCHBAR;
+    const g = guete(m.ist, breite, dehn, stauch);
+    return { ...g, ist: m.ist, zwischen: m.zwischen };
+  }
+
+  /* Der gierige Umbruch: nimm Wörter, bis es nicht mehr passt. */
+  function gierig(kaesten, breite, zwischenbreite) {
+    const zeilen = [];
+    let von = 0, letzteErlaubt = -1;
+    for (let i = 0; i < kaesten.length; i++) {
+      const m = zeilenMass(kaesten, von, i, zwischenbreite);
+      if (m.ist > breite && letzteErlaubt >= von) {
+        zeilen.push([von, letzteErlaubt]);
+        von = letzteErlaubt + 1;
+        i = von - 1;                                   // von dort neu ansetzen
+        letzteErlaubt = -1;
+        continue;
+      }
+      if (kaesten[i].umbruchErlaubt) letzteErlaubt = i;
+    }
+    zeilen.push([von, kaesten.length - 1]);
+    return zeilen;
+  }
+
+  /* Der optimale Umbruch: kürzester Weg durch alle erlaubten Umbruchstellen.
+     best[j] ist die kleinste Gesamtstrafe, mit der die ersten j Kästchen
+     gesetzt werden können. */
+  function optimal(kaesten, breite, zwischenbreite) {
+    /* Erst streng: keine Zeile darf über das erlaubte Dehnen hinaus. Gibt es so
+       keinen Umbruch — bei schmalen Spalten ohne Silbentrennung der Normalfall —,
+       dann ein zweiter Durchgang, der überdehnte Zeilen zulässt und ihre Zahl
+       so klein wie möglich hält. Stillschweigend auf den gierigen Umbruch
+       zurückzufallen wäre die schlechtere Antwort: dann sähe man keinen
+       Unterschied und wüsste nicht, warum. */
+    const rechne = (notfall) => {
+      const N = kaesten.length;
+      const best = new Float64Array(N + 1).fill(Infinity);
+      const woher = new Int32Array(N + 1).fill(-1);
+      best[0] = 0;
+      for (let j = 1; j <= N; j++) {
+        if (j < N && !kaesten[j - 1].umbruchErlaubt) continue;
+        for (let i = 0; i < j; i++) {
+          if (!isFinite(best[i])) continue;
+          if (i > 0 && !kaesten[i - 1].umbruchErlaubt) continue;
+          const g = zeileBewerten(kaesten, i, j - 1, breite, zwischenbreite);
+          const letzte = j === N;
+          // zu breit ist in beiden Durchgängen verboten — auch in der letzten Zeile
+          if (!passtUeberhaupt(kaesten, i, j - 1, breite, zwischenbreite)) continue;
+          if (!letzte && g.b >= SCHLECHT && !notfall) continue;
+          const strafe = letzte ? 0 : Math.min(g.b, SCHLECHT) + (kaesten[j - 1].trennung ? 50 : 0);
+          if (best[i] + strafe < best[j]) { best[j] = best[i] + strafe; woher[j] = i; }
+        }
+      }
+      if (!isFinite(best[N])) return null;
+      const zeilen = [];
+      let j = N;
+      while (j > 0) { zeilen.unshift([woher[j], j - 1]); j = woher[j]; }
+      return { zeilen, summe: best[N] };
+    };
+    const streng = rechne(false);
+    if (streng) return streng;
+    const notfall = rechne(true);
+    if (notfall) notfall.notloesung = true;
+    return notfall;
+  }
+
+  function gesamtstrafe(kaesten, zeilen, breite, zwischenbreite) {
+    let summe = 0, schlimmste = 0;
+    zeilen.forEach(([a, b], i) => {
+      if (i === zeilen.length - 1) return;             // letzte Zeile darf kurz sein
+      const g = zeileBewerten(kaesten, a, b, breite, zwischenbreite);
+      summe += g.b;
+      schlimmste = Math.max(schlimmste, g.b);
+    });
+    return { summe, schlimmste };
+  }
+
+  /* ==========================================================================
+     SILBENTRENNUNG NACH SPRECHSILBEN
+     Vokalgruppen suchen, dazwischen nach Regel trennen. Digrafen bleiben
+     zusammen. Das ist die einfache Variante — was sie nicht kann, misst der
+     Prüflauf gegen ein Wörterbuch.
+     ========================================================================== */
+  const VOKALE = "aeiouäöüyAEIOUÄÖÜY";
+  const istVokal = (c) => VOKALE.includes(c);
+  const DIGRAFEN = ["sch", "ch", "ck", "ph", "th", "sh", "qu"]
+    .sort((a, b) => b.length - a.length);   // laengster zuerst, sonst zerreißt "ch" das "sch"
+
+  function trennstellen(wort) {
+    const w = wort.toLowerCase();
+    if (w.length < 5) return [];
+    const stellen = [];
+    // Vokalgruppen finden
+    const gruppen = [];
+    for (let i = 0; i < w.length; i++) {
+      if (!istVokal(w[i])) continue;
+      let j = i;
+      while (j + 1 < w.length && istVokal(w[j + 1])) j++;
+      gruppen.push([i, j]);
+      i = j;
+    }
+    for (let g = 0; g < gruppen.length - 1; g++) {
+      const nachVokal = gruppen[g][1] + 1;
+      const vorVokal = gruppen[g + 1][0];
+      const mitlaute = vorVokal - nachVokal;
+      let stelle;
+      if (mitlaute === 0) continue;                    // Vokal an Vokal: nicht trennen
+      if (mitlaute === 1) stelle = nachVokal;          // Ha-se
+      else {
+        stelle = vorVokal - 1;                         // Fens-ter: vor dem letzten Mitlaut
+        // Digrafen nicht auseinanderreißen
+        for (const d of DIGRAFEN) {
+          const anfang = vorVokal - d.length;
+          if (anfang >= nachVokal && w.slice(anfang, vorVokal) === d) { stelle = anfang; break; }
+        }
+      }
+      // vorne und hinten müssen je zwei Buchstaben bleiben (Kis-te ist erlaubt)
+      if (stelle >= 2 && wort.length - stelle >= 2) stellen.push(stelle);
+    }
+    return stellen.filter((s, i) => i === 0 || s - stellen[i - 1] >= 2);
+  }
+
+  /* Wörterbuch mit richtig getrennten Wörtern — Prüfstein für die Regeln oben.
+     Die Trennstellen stehen als Bindestriche. */
+  const WOERTERBUCH = [
+    "Fens-ter", "Meis-ter", "Kis-te", "Zu-cker", "Bä-cker", "Was-ser", "Trep-pe", "kom-men",
+    "Him-mel", "Bü-cher", "ma-chen", "Kü-che", "Fla-sche", "wa-schen", "Ord-nung", "Hand-lung",
+    "Sil-ben", "Tren-nung", "Ta-bel-le", "Fa-mi-lie", "Ge-schich-te", "Buch-sta-be",
+    "Zeit-schrift", "Freun-de", "Ma-the-ma-tik", "Ver-ständ-nis", "Kin-der", "Gar-ten",
+    "Zei-len", "Um-bruch", "Schrift-satz", "Rech-ner", "Spal-te", "brei-te", "Wör-ter",
+    "Feh-ler", "Auf-ga-be", "Lö-sung", "Mes-sung", "Ver-fah-ren", "Ab-satz", "Dru-cker"
+  ];
+
+  function trennungAlsText(wort, stellen) {
+    let raus = "", letzte = 0;
+    for (const s of stellen) { raus += wort.slice(letzte, s) + "-"; letzte = s; }
+    return raus + wort.slice(letzte);
+  }
+
+  /* ==========================================================================
+     TEXT ZU KÄSTCHEN
+     ========================================================================== */
+  let MESSER = null;
+  function messerVorbereiten(grad) {
+    const c = document.createElement("canvas");
+    const g = c.getContext("2d");
+    g.font = `${grad}px ${getComputedStyle(document.documentElement).getPropertyValue("--f-satz")}`;
+    return {
+      breite: (s) => g.measureText(s).width,
+      zwischen: g.measureText(" ").width,
+      strich: g.measureText("-").width,
+      font: g.font
+    };
+  }
+
+  function kaestchen(text, mitTrennung) {
+    const worte = text.trim().split(/\s+/).filter(Boolean);
+    const raus = [];
+    worte.forEach((wort, wi) => {
+      const stellen = mitTrennung ? trennstellen(wort.replace(/[^A-Za-zÄÖÜäöüß]/g, "")) : [];
+      if (!stellen.length) {
+        raus.push({ text: wort, breite: MESSER.breite(wort), umbruchErlaubt: true,
+          trennung: false, klebt: false, strichbreite: MESSER.strich });
+        return;
+      }
+      // Wort in Teile zerlegen; die Teile kleben aneinander (kein Zwischenraum)
+      let letzte = 0;
+      const teile = [];
+      for (const s of stellen) { teile.push(wort.slice(letzte, s)); letzte = s; }
+      teile.push(wort.slice(letzte));
+      teile.forEach((teil, i) => {
+        const amEnde = i === teile.length - 1;
+        raus.push({
+          text: teil, breite: MESSER.breite(teil),
+          umbruchErlaubt: true, trennung: !amEnde, klebt: !amEnde,
+          strichbreite: MESSER.strich
+        });
+      });
+      void wi;
+    });
+    if (raus.length) raus[raus.length - 1].umbruchErlaubt = true;
+    return raus;
+  }
+
+  /* ==========================================================================
+     ZEICHNEN
+     ========================================================================== */
+  const farbe = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  function satzZeichnen(id, kaesten, zeilen, breite, grad, akzent) {
+    const c = $(id), g = c.getContext("2d");
+    const zeilenhoehe = grad * 1.62;
+    const rand = 26;
+    const hoehe = Math.max(120, Math.round(zeilen.length * zeilenhoehe + 2 * rand));
+    if (c.height !== hoehe) c.height = hoehe;
+    g.fillStyle = farbe("--tief"); g.fillRect(0, 0, c.width, c.height);
+    g.font = MESSER.font;
+    g.textBaseline = "alphabetic";
+
+    // Satzspiegel andeuten
+    g.strokeStyle = farbe("--netz"); g.globalAlpha = .5; g.setLineDash([3, 4]); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(rand, 8); g.lineTo(rand, c.height - 8);
+    g.moveTo(rand + breite, 8); g.lineTo(rand + breite, c.height - 8); g.stroke();
+    g.setLineDash([]); g.globalAlpha = 1;
+
+    zeilen.forEach(([von, bis], zi) => {
+      const y = rand + zi * zeilenhoehe + grad;
+      const m = zeilenMass(kaesten, von, bis, MESSER.zwischen);
+      const letzte = zi === zeilen.length - 1;
+      let zwischenbreite = MESSER.zwischen;
+      if (!letzte && m.zwischen > 0) zwischenbreite = (breite - (m.ist - m.zwischen * MESSER.zwischen)) / m.zwischen;
+      const g2 = zeileBewerten(kaesten, von, bis, breite, MESSER.zwischen);
+
+      let x = rand;
+      for (let i = von; i <= bis; i++) {
+        g.fillStyle = farbe("--tinte");
+        g.fillText(kaesten[i].text, x, y);
+        x += kaesten[i].breite;
+        if (i === bis && kaesten[i].trennung) {
+          g.fillStyle = farbe("--trenn");
+          g.fillText("-", x, y);
+          x += kaesten[i].strichbreite;
+        } else if (i < bis && !kaesten[i].klebt) {
+          x += letzte ? MESSER.zwischen : zwischenbreite;
+        }
+      }
+      // Güte am Rand
+      if (ZEIGE_GUETE && !letzte) {
+        const r = Math.max(-1, Math.min(3, g2.r));
+        g.fillStyle = farbe(r > 0 ? akzent : "--trenn");
+        g.globalAlpha = .5;
+        const balken = Math.min(16, Math.abs(r) * 8);
+        g.fillRect(rand + breite + 8, y - grad * 0.7, balken, grad * 0.7);
+        g.globalAlpha = 1;
+        g.fillStyle = farbe("--leise");
+        g.font = "9px ui-monospace, monospace";
+        g.fillText(g2.b.toFixed(0), rand + breite + 28, y);
+        g.font = MESSER.font;
+      }
+    });
+  }
+
+  function gueteZeichnen(kaestenA, zeilenA, kaestenB, zeilenB, breite) {
+    const c = $("guete"), g = c.getContext("2d");
+    g.fillStyle = farbe("--tief"); g.fillRect(0, 0, c.width, c.height);
+    const links = 40, oben = 16, unten = 22;
+    const B = c.width - links - 16, H = c.height - oben - unten;
+    const mitte = oben + H / 2;
+    const werte = (kaesten, zeilen) => zeilen.slice(0, -1).map(([a, b]) =>
+      zeileBewerten(kaesten, a, b, breite, MESSER.zwischen).r);
+    const wA = werte(kaestenA, zeilenA), wB = werte(kaestenB, zeilenB);
+    const n = Math.max(wA.length, wB.length, 1);
+    const breiteJe = B / n;
+
+    g.strokeStyle = farbe("--netz"); g.globalAlpha = .5; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(links, mitte); g.lineTo(links + B, mitte); g.stroke();
+    g.globalAlpha = 1;
+    g.font = "9px ui-monospace, monospace"; g.fillStyle = farbe("--leise");
+    g.textAlign = "right"; g.textBaseline = "middle";
+    g.fillText("gedehnt", links - 5, oben + 8);
+    g.fillText("0", links - 5, mitte);
+    g.fillText("gestaucht", links - 5, oben + H - 8);
+
+    const zeichne = (werteListe, versatz, farbname) => {
+      g.fillStyle = farbe(farbname);
+      werteListe.forEach((r, i) => {
+        const h = Math.max(1, Math.min(H / 2 - 4, Math.abs(r) / 2 * (H / 2 - 6)));
+        const x = links + i * breiteJe + versatz;
+        g.fillRect(x, r > 0 ? mitte - h : mitte, breiteJe * 0.4, h);
+      });
+    };
+    zeichne(wA, breiteJe * 0.06, "--gierig");
+    zeichne(wB, breiteJe * 0.52, "--gut");
+
+    g.textAlign = "center"; g.textBaseline = "top";
+    for (let i = 0; i < n; i++) g.fillText(String(i + 1), links + i * breiteJe + breiteJe / 2, oben + H + 5);
+    $("guete-lage").textContent =
+      `${wA.length} bzw. ${wB.length} Zeilen (ohne die letzte) · links gierig, rechts optimal`;
+  }
+
+  /* ==========================================================================
+     PROBEN
+     ========================================================================== */
+  const PROBEN = {
+    werkstatt: { name: "Über den Blocksatz", text:
+      "Ein Absatz im Blocksatz sieht ruhig aus, solange die Zwischenräume gleichmäßig bleiben. " +
+      "Sobald eine Zeile zu wenige Wörter tragen muss, reißen sie auf, und im Satzspiegel " +
+      "entstehen helle Flüsse, die das Auge nach unten ziehen. Der gierige Umbruch merkt davon " +
+      "nichts, weil er jede Zeile für sich betrachtet und nie zurückschaut. Wer den ganzen Absatz " +
+      "auf einmal betrachtet, darf eine frühe Zeile absichtlich enger setzen, damit alle folgenden " +
+      "ruhig bleiben." },
+    schmal: { name: "Kurzer Absatz", text:
+      "Der Zeilenumbruch ist die letzte Entscheidung im Satz und die einzige, die niemand bemerkt, " +
+      "wenn sie gelungen ist." },
+    lang: { name: "Langer Absatz", text:
+      "Die Kunst des Setzens besteht darin, den Text so über die Fläche zu verteilen, dass beim " +
+      "Lesen nichts stört. Dazu gehört die Wahl der Schrift, der Zeilenabstand, die Breite der " +
+      "Spalte und zuletzt der Umbruch. Eine zu breite Spalte lässt das Auge beim Rücksprung die " +
+      "Zeile verlieren, eine zu schmale erzwingt entweder viele Trennungen oder große Löcher " +
+      "zwischen den Wörtern. Zwischen diesen beiden Fehlern liegt ein schmaler Bereich, in dem " +
+      "eine Seite ruhig wirkt, und diesen Bereich trifft man nicht durch Zufall, sondern durch " +
+      "Messen. Genau dafür gibt es eine Zahl, die angibt, wie stark die Zwischenräume vom " +
+      "Sollmaß abweichen mussten, und ein Verfahren, das die Summe dieser Zahlen über den ganzen " +
+      "Absatz so klein wie möglich macht." },
+    lang2: { name: "Zusammengesetzte Wörter", text:
+      "Donaudampfschifffahrtsgesellschaft, Fensterrahmenverschraubung und Buchstabenkombination " +
+      "sind Wörter, an denen jede regelbasierte Silbentrennung scheitert, weil sie die Fugen " +
+      "zwischen den Bestandteilen nicht kennt. Ein Trennprogramm mit Wörterbuch trennt hier " +
+      "richtig, eines mit bloßen Sprechsilbenregeln nicht." }
+  };
+
+  let PROBE = "werkstatt", BREITE = 420, GRAD = 17, TRENNUNG = false, ZEIGE_GUETE = true;
+
+  function alles() {
+    MESSER = messerVorbereiten(GRAD);
+    const text = $("text").value;
+    const kaesten = kaestchen(text, TRENNUNG);
+    const zeilenG = gierig(kaesten, BREITE, MESSER.zwischen);
+    const opt = optimal(kaesten, BREITE, MESSER.zwischen);
+    const zeilenO = opt ? opt.zeilen : zeilenG;
+    const notloesung = opt && opt.notloesung;
+
+    satzZeichnen("satz-gierig", kaesten, zeilenG, BREITE, GRAD, "--gierig");
+    satzZeichnen("satz-gut", kaesten, zeilenO, BREITE, GRAD, "--gut");
+    gueteZeichnen(kaesten, zeilenG, kaesten, zeilenO, BREITE);
+
+    const sG = gesamtstrafe(kaesten, zeilenG, BREITE, MESSER.zwischen);
+    const sO = gesamtstrafe(kaesten, zeilenO, BREITE, MESSER.zwischen);
+    const trennungen = zeilenO.slice(0, -1).filter(([, b]) => kaesten[b].trennung).length;
+
+    $("w-g-summe").textContent = sG.summe.toFixed(0);
+    $("w-o-summe").textContent = sO.summe.toFixed(0);
+    $("w-g-max").textContent = sG.schlimmste.toFixed(0);
+    $("w-o-max").textContent = sO.schlimmste.toFixed(0);
+    $("w-zeilen").textContent = `${zeilenG.length} / ${zeilenO.length}`;
+    $("w-trennungen").textContent = String(trennungen);
+    $("gierig-lage").textContent = `${zeilenG.length} Zeilen · Strafe ${sG.summe.toFixed(0)}`;
+    $("gut-lage").textContent = `${zeilenO.length} Zeilen · Strafe ${sO.summe.toFixed(0)}`;
+
+    const besser = sG.summe > 0 ? (1 - sO.summe / sG.summe) * 100 : 0;
+    $("vergleich-fuss").innerHTML = sO.summe < sG.summe - 1e-9
+      ? `Der optimale Umbruch kommt mit <b>${besser.toFixed(0)} % weniger Gesamtstrafe</b> aus. ` +
+        `Die schlechteste einzelne Zeile fällt von <b style="color:var(--gierig)">${sG.schlimmste.toFixed(0)}</b> ` +
+        `auf <b style="color:var(--gut)">${sO.schlimmste.toFixed(0)}</b> — das ist der eigentliche Gewinn: ` +
+        `nicht der Durchschnitt, sondern dass keine Zeile mehr auffällt.`
+      : `Bei dieser Breite finden beide Verfahren denselben Umbruch. Das ist der Normalfall bei ` +
+        `weiten Spalten — schmaler ziehen, und der Unterschied kommt sofort.`;
+    if (notloesung) {
+      $("vergleich-fuss").innerHTML = `<b style="color:var(--warn)">Kein Umbruch hält hier die Grenzen ein.</b> ` +
+        `Die Spalte ist zu schmal für diese Wörter — mindestens eine Zeile muss über das erlaubte Maß ` +
+        `gedehnt werden. Das Verfahren hält die Zahl solcher Zeilen so klein wie möglich; ` +
+        `<b>Silbentrennung einschalten</b> löst es meist ganz. ` + $("vergleich-fuss").innerHTML;
+    }
+    $("mess-fuss").innerHTML =
+      `Die Strafe je Zeile ist <code>100·r³</code>, wobei r misst, wie weit die Zwischenräume ` +
+      `gedehnt (positiv) oder gestaucht (negativ) werden mussten. Die <b>letzte Zeile zählt nicht</b> — ` +
+      `sie darf kurz sein.`;
+    $("breite-zahl").textContent = BREITE + " px";
+  }
+
+  function trennprobenZeigen() {
+    const tb = $("trennproben").querySelector("tbody");
+    tb.textContent = "";
+    let richtig = 0;
+    const proben = WOERTERBUCH.slice(0, 8);
+    for (const eintrag of proben) {
+      const wort = eintrag.replace(/-/g, "");
+      const soll = eintrag;
+      const ist = trennungAlsText(wort, trennstellen(wort));
+      const stimmt = ist === soll;
+      if (stimmt) richtig++;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${ist}</td><td class="z ${stimmt ? "gutt" : "schlecht"}">` +
+        `${stimmt ? "richtig" : soll}</td>`;
+      tb.append(tr);
+    }
+    $("trenn-lage").textContent = `${richtig} von ${proben.length} gezeigt`;
+  }
+
+  /* ==========================================================================
+     PRÜFLAUF
+     ========================================================================== */
+  function wuerfel(saat) {
+    let a = saat >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* Für den Prüflauf werden Kästchenbreiten gewürfelt statt gemessen — so
+     hängt das Ergebnis nicht davon ab, welche Schrift auf dem Rechner liegt. */
+  function kuenstlicheKaesten(z, n) {
+    return Array.from({ length: n }, () => ({
+      text: "x", breite: 20 + Math.floor(z() * 90), umbruchErlaubt: true,
+      trennung: false, klebt: false, strichbreite: 5
+    }));
+  }
+
+  function erschoepfend(kaesten, breite, zwischen) {
+    const N = kaesten.length;
+    let bestes = Infinity;
+    for (let maske = 0; maske < (1 << (N - 1)); maske++) {
+      const grenzen = [];
+      for (let i = 0; i < N - 1; i++) if (maske & (1 << i)) grenzen.push(i);
+      grenzen.push(N - 1);
+      let summe = 0, moeglich = true;
+      let von = 0;
+      for (let k = 0; k < grenzen.length; k++) {
+        const bis = grenzen[k];
+        const g = zeileBewerten(kaesten, von, bis, breite, zwischen);
+        const letzte = k === grenzen.length - 1;
+        if (!passtUeberhaupt(kaesten, von, bis, breite, zwischen)) { moeglich = false; break; }
+        if (!letzte && g.b >= SCHLECHT) { moeglich = false; break; }
+        if (!letzte) summe += g.b;
+        von = bis + 1;
+      }
+      if (moeglich) bestes = Math.min(bestes, summe);
+    }
+    return bestes;
+  }
+
+  function pruefen() {
+    const tb = $("pruef").querySelector("tbody");
+    tb.textContent = "";
+    let fehler = 0;
+    const zeile = (was, gut, text) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${was}</td><td style="color:${gut ? "var(--ok)" : "var(--warn)"}">${text}</td>`;
+      tb.append(tr);
+      if (!gut) fehler++;
+    };
+    const t0 = performance.now();
+
+    // 1. Das Verfahren trifft das Minimum — gegen alle Aufteilungen geprüft.
+    {
+      const z = wuerfel(20260818);
+      let faelle = 0, maxAbw = 0, aufteilungen = 0, schlimmstes = null;
+      for (let lauf = 0; lauf < 300; lauf++) {
+        const n = 6 + Math.floor(z() * 6);
+        const kaesten = kuenstlicheKaesten(z, n);
+        const breite = 180 + Math.floor(z() * 240), zwischen = 10;
+        const o = optimal(kaesten, breite, zwischen);
+        const e = erschoepfend(kaesten, breite, zwischen);
+        aufteilungen += 1 << (n - 1);
+        if (!isFinite(e)) continue;
+        faelle++;
+        const abw = Math.abs((o ? o.summe : Infinity) - e);
+        if (abw > maxAbw) { maxAbw = abw; schlimmstes = `${n} Wörter, Breite ${breite}`; }
+      }
+      zeile("das Verfahren trifft wirklich das Minimum", maxAbw < 1e-9,
+        `${faelle} Absätze · <b>${aufteilungen.toLocaleString("de-AT")} Aufteilungen</b> einzeln ` +
+        `durchprobiert · größte Abweichung ${maxAbw.toExponential(1)}` +
+        (schlimmstes && maxAbw > 0 ? ` (${schlimmstes})` : ""));
+    }
+
+    // 2. Optimal ist nie schlechter als gierig.
+    {
+      const z = wuerfel(4711);
+      let faelle = 0, besser = 0, gleich = 0, schlechter = 0, summeG = 0, summeO = 0;
+      for (let lauf = 0; lauf < 600; lauf++) {
+        const n = 8 + Math.floor(z() * 18);
+        const kaesten = kuenstlicheKaesten(z, n);
+        const breite = 200 + Math.floor(z() * 300), zwischen = 10;
+        const o = optimal(kaesten, breite, zwischen);
+        if (!o) continue;
+        const g = gierig(kaesten, breite, zwischen);
+        const sG = gesamtstrafe(kaesten, g, breite, zwischen).summe;
+        const sO = gesamtstrafe(kaesten, o.zeilen, breite, zwischen).summe;
+        faelle++; summeG += sG; summeO += sO;
+        if (sO < sG - 1e-9) besser++; else if (Math.abs(sO - sG) < 1e-9) gleich++; else schlechter++;
+      }
+      zeile("optimal ist nie schlechter als gierig", schlechter === 0,
+        `${faelle} Absätze · <b>${besser} besser</b>, ${gleich} gleich, ${schlechter} schlechter · ` +
+        `Gesamtstrafe ${summeG.toFixed(0)} gegen ${summeO.toFixed(0)} — ` +
+        `${(100 - summeO / summeG * 100).toFixed(0)} % weniger`);
+    }
+
+    // 3. Keine Zeile ragt über die Spalte hinaus.
+    {
+      const z = wuerfel(31337);
+      let geprueft = 0, zuBreit = 0, groessteUeberschreitung = 0;
+      for (let lauf = 0; lauf < 300; lauf++) {
+        const n = 10 + Math.floor(z() * 20);
+        const kaesten = kuenstlicheKaesten(z, n);
+        const breite = 220 + Math.floor(z() * 260), zwischen = 10;
+        const o = optimal(kaesten, breite, zwischen);
+        if (!o) continue;
+        o.zeilen.forEach(([a, b], i) => {
+          geprueft++;
+          const m = zeilenMass(kaesten, a, b, zwischen);
+          // gestaucht darf sie werden, aber nicht über das erlaubte Maß hinaus
+          const minBreite = m.ist - m.zwischen * zwischen * STAUCHBAR;
+          if (i < o.zeilen.length - 1 && minBreite > breite + 1e-9) {
+            zuBreit++;
+            groessteUeberschreitung = Math.max(groessteUeberschreitung, minBreite - breite);
+          }
+        });
+      }
+      zeile("keine Zeile ragt über die Spalte", zuBreit === 0,
+        `${geprueft.toLocaleString("de-AT")} Zeilen geprüft · ${zuBreit} Überschreitungen` +
+        (zuBreit ? ` bis ${groessteUeberschreitung.toFixed(1)} px` : ""));
+    }
+
+    // 4. Monotonie — und wo sie ausgerechnet beim besseren Verfahren endet.
+    {
+      const z = wuerfel(999331);
+      let faelle = 0, gierigVerletzt = 0, optimalVerletzt = 0, beispiel = null;
+      for (let lauf = 0; lauf < 120; lauf++) {
+        const kaesten = kuenstlicheKaesten(z, 14 + Math.floor(z() * 10));
+        let vorherG = Infinity, vorherO = Infinity, vorherBreite = 0;
+        for (let breite = 240; breite <= 620; breite += 20) {
+          const o = optimal(kaesten, breite, 10);
+          const g = gierig(kaesten, breite, 10);
+          if (!o) continue;
+          faelle++;
+          if (g.length > vorherG) gierigVerletzt++;
+          if (o.zeilen.length > vorherO) {
+            optimalVerletzt++;
+            if (!beispiel) beispiel = `${vorherBreite} px → ${vorherO} Zeilen, ` +
+              `${breite} px → ${o.zeilen.length} Zeilen`;
+          }
+          vorherG = g.length; vorherO = o.zeilen.length; vorherBreite = breite;
+        }
+      }
+      zeile("gierig ist monoton — der optimale Umbruch nicht", gierigVerletzt === 0 && optimalVerletzt > 0,
+        `${faelle.toLocaleString("de-AT")} Spaltenbreiten über 120 Absätze · gierig: ` +
+        `<b>${gierigVerletzt} Ausreißer</b> · optimal: <b>${optimalVerletzt}</b> — und das ist kein ` +
+        `Fehler: das Verfahren nimmt lieber eine Zeile mehr, als eine hässliche Zeile hinzunehmen` +
+        (beispiel ? ` (${beispiel})` : ""));
+    }
+
+    // 5. Die Strafe folgt der dritten Potenz.
+    {
+      const proben = [[0.5, 12.5], [1, 100], [1.5, 337.5], [2, 800]];
+      let maxAbw = 0;
+      for (const [r, soll] of proben) {
+        const ist = guete(100 - r * 10, 100, 10, 10).b;
+        maxAbw = Math.max(maxAbw, Math.abs(ist - soll));
+      }
+      const doppelt = guete(100 - 20, 100, 10, 10).b / guete(100 - 10, 100, 10, 10).b;
+      zeile("doppelt gedehnt heißt achtmal so schlimm", maxAbw < 1e-9 && Math.abs(doppelt - 8) < 1e-9,
+        `100·r³ an vier Stellen nachgerechnet (Abweichung ${maxAbw.toExponential(1)}) · ` +
+        `r = 1 gegen r = 2: Faktor ${doppelt.toFixed(1)}`);
+    }
+
+    // 6. Silbentrennung gegen das Wörterbuch — mit dem Anteil, der danebengeht.
+    {
+      let richtig = 0, falsch = [];
+      for (const eintrag of WOERTERBUCH) {
+        const wort = eintrag.replace(/-/g, "");
+        const ist = trennungAlsText(wort, trennstellen(wort));
+        if (ist === eintrag) richtig++; else falsch.push(`${ist} statt ${eintrag}`);
+      }
+      const quote = richtig / WOERTERBUCH.length * 100;
+      zeile("Silbentrennung gegen das Wörterbuch", richtig > 0,
+        `<b>${richtig} von ${WOERTERBUCH.length}</b> richtig (${quote.toFixed(0)} %) · ` +
+        `daneben: ${falsch.slice(0, 3).join(", ")}${falsch.length > 3 ? " …" : ""} — ` +
+        `Regeln ohne Wörterbuch kennen die Fugen zusammengesetzter Wörter nicht`);
+    }
+
+    // 7. Trennung darf nie schaden.
+    {
+      let faelle = 0, besser = 0, schlechter = 0, summeOhne = 0, summeMit = 0;
+      const texte = Object.values(PROBEN).map((p) => p.text);
+      MESSER = messerVorbereiten(17);
+      for (const text of texte) {
+        for (const breite of [220, 280, 340, 420, 520]) {
+          const ohne = optimal(kaestchen(text, false), breite, MESSER.zwischen);
+          const mit = optimal(kaestchen(text, true), breite, MESSER.zwischen);
+          if (!ohne || !mit) continue;
+          faelle++;
+          const sOhne = gesamtstrafe(kaestchen(text, false), ohne.zeilen, breite, MESSER.zwischen).summe;
+          const sMit = gesamtstrafe(kaestchen(text, true), mit.zeilen, breite, MESSER.zwischen).summe;
+          summeOhne += sOhne; summeMit += sMit;
+          if (sMit < sOhne - 1e-9) besser++;
+          if (sMit > sOhne + 1e-9) schlechter++;
+        }
+      }
+      zeile("Silbentrennung senkt die Strafe", schlechter === 0 && besser > 0,
+        `${faelle} Kombinationen aus Text und Spaltenbreite · ${besser} mal besser, ${schlechter} mal ` +
+        `schlechter · Gesamtstrafe ${summeOhne.toFixed(0)} ohne gegen ${summeMit.toFixed(0)} mit Trennung ` +
+        `(${(100 - summeMit / summeOhne * 100).toFixed(0)} % weniger)`);
+    }
+
+    const dauer = performance.now() - t0;
+    $("pruef-fuss").innerHTML = fehler === 0
+      ? `<b>Alle Prüfungen bestanden</b> in ${dauer.toFixed(0)} ms. Die erste Zeile ist die, um die es ` +
+        `geht: „optimal" ist hier kein Werbewort, sondern gegen <b>alle</b> Aufteilungen geprüft. ` +
+        `Die sechste ist die ehrlichste — sie zeigt, was die Silbentrennung <b>nicht</b> kann.`
+      : `<b style="color:var(--warn)">${fehler} Prüfung(en) fehlgeschlagen.</b>`;
+    alles();
+  }
+
+  /* ==========================================================================
+     BEDIENUNG
+     ========================================================================== */
+  {
+    const w = $("probe");
+    for (const [k, p] of Object.entries(PROBEN)) {
+      const o = document.createElement("option");
+      o.value = k; o.textContent = p.name;
+      w.append(o);
+    }
+    w.value = PROBE;
+    w.addEventListener("change", () => { PROBE = w.value; $("text").value = PROBEN[PROBE].text; alles(); });
+  }
+
+  let tippUhr = null;
+  $("text").addEventListener("input", () => { clearTimeout(tippUhr); tippUhr = setTimeout(alles, 200); });
+  $("breite").addEventListener("input", (e) => { BREITE = +e.target.value; alles(); });
+  $("grad").addEventListener("input", (e) => { GRAD = +e.target.value; alles(); });
+  $("b-trennen").addEventListener("click", (e) => {
+    TRENNUNG = !TRENNUNG;
+    e.currentTarget.setAttribute("aria-pressed", String(TRENNUNG));
+    alles();
+  });
+  $("b-guete").addEventListener("click", (e) => {
+    ZEIGE_GUETE = !ZEIGE_GUETE;
+    e.currentTarget.setAttribute("aria-pressed", String(ZEIGE_GUETE));
+    alles();
+  });
+  $("b-pruefen").addEventListener("click", pruefen);
+  $("b-thema").addEventListener("click", () => {
+    const jetzt = document.documentElement.getAttribute("data-theme");
+    const dunkel = matchMedia("(prefers-color-scheme: dark)").matches;
+    document.documentElement.setAttribute("data-theme", jetzt ? (jetzt === "dark" ? "light" : "dark") : (dunkel ? "light" : "dark"));
+    alles();
+  });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", alles);
+
+  $("text").value = PROBEN[PROBE].text;
+  trennprobenZeigen();
+  $("trenn-fuss").innerHTML =
+    `Acht Beispiele aus dem Wörterbuch, das der Prüflauf vollständig durchgeht. Grün heißt: die ` +
+    `Regeln treffen die Wörterbuchtrennung. Rot zeigt, was richtig gewesen wäre.`;
+  alles();
+})();
+</script>
+</body>
+</html>
